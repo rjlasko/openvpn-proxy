@@ -1,6 +1,6 @@
 #!/bin/sh
 set -euo pipefail
-set -x
+# set -xv
 
 # this script needs to take in all variables that will:
 # 1. setup the default user
@@ -8,6 +8,36 @@ set -x
 # 3. run openvpn (as user?)
 
 DEBUG=${DEBUG:-"false"}
+
+#######################
+## PARSE OVPN CONFIG ##
+#######################
+mkdir -p /vpn
+VPN_CONFIG="/vpn/vpn.conf"
+if [ ! -f ${VPN_CONFIG_SRC} ] ; then
+	echo "[error] Failed to find OVPN config file located at VPN_CONFIG_SRC: ${VPN_CONFIG_SRC}"
+fi
+dos2unix -n ${VPN_CONFIG_SRC} ${VPN_CONFIG}
+echo "[info] OpenVPN config file (ovpn extension) is located at ${VPN_CONFIG}"
+
+vpn_remote_line=$(grep -P -o -m 1 '^(\s+)?remote\s.*' $VPN_CONFIG_SRC)
+echo "[info] VPN remote line defined as '${vpn_remote_line}'"
+
+VPN_REMOTE=$(echo "${vpn_remote_line}" | grep -P -o -m 1 '(?<=remote\s)[^\s]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+echo "[info] VPN_REMOTE defined as '${VPN_REMOTE}'"
+
+VPN_PORT=$(echo "${vpn_remote_line}" | grep -P -o -m 1 '\d{2,5}(\s?)+(tcp|udp|tcp-client)?$' | grep -P -o -m 1 '\d+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+echo "[info] VPN_PORT defined as '${VPN_PORT}'"
+
+VPN_PROTOCOL=$(cat "${VPN_CONFIG}" | grep -P -o -m 1 '(?<=^proto\s)[^\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+echo "[info] VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
+
+VPN_DEVICE_TYPE=$(cat "${VPN_CONFIG}" | grep -P -o -m 1 '(?<=^dev\s)[^\r\n\d]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+VPN_DEVICE_TYPE="${VPN_DEVICE_TYPE}0"
+echo "[info] VPN_DEVICE_TYPE defined as '${VPN_DEVICE_TYPE}'"
+
+NAME_SERVERS=$(echo "${NAME_SERVERS}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+echo "[info] NAME_SERVERS defined as '${NAME_SERVERS}'"
 
 #########################
 ## DOCKER NETWORK INFO ##
@@ -94,26 +124,27 @@ iptables --append OUTPUT --out-interface "${docker_interface}" --protocol ${VPN_
 # XXX: need to understand why VPN_PORT specifies [INPUT, --source-port] & [OUTPUT, --destination-port]
 # while all other ports specify source and destination ports for both INPUT and OUTPUT
 
-if [ -n "${ADDITIONAL_PORTS:-}" ] ; then
-	# split comma separated string into list from ADDITIONAL_PORTS env variable
-	IFS=',' read -ra additional_port_list <<< "${ADDITIONAL_PORTS}"
+# FIXME: requires bash
+# if [[ ! -z "${ADDITIONAL_PORTS:-}" ]] ; then
+# 	# split comma separated string into list from ADDITIONAL_PORTS env variable
+# 	IFS=',' read -ra additional_port_list <<< "${ADDITIONAL_PORTS}"
+# 
+# 	# process additional ports in the list
+# 	for additional_port_item in "${additional_port_list[@]}" ; do
+# 		# strip whitespace from start and end of additional_port_item
+# 		additional_port_item=$(echo "${additional_port_item}" | xargs)
+# 
+# 		echo "[info] Adding additional incoming & outgoing port ${additional_port_item} for ${docker_interface}"
+# 
+# 		# accept input & output to additional port for lan interface
+# 		iptables --append INPUT --in-interface "${docker_interface}" --protocol tcp --destination-port "${additional_port_item}" --jump ACCEPT
+# 		iptables --append INPUT --in-interface "${docker_interface}" --protocol tcp --source-port "${additional_port_item}" --jump ACCEPT
+# 		iptables --append OUTPUT --out-interface "${docker_interface}" --protocol tcp --destination-port "${additional_port_item}" --jump ACCEPT
+# 		iptables --append OUTPUT --out-interface "${docker_interface}" --protocol tcp --source-port "${additional_port_item}" --jump ACCEPT
+# 	done
+# fi
 
-	# process additional ports in the list
-	for additional_port_item in "${additional_port_list[@]}" ; do
-		# strip whitespace from start and end of additional_port_item
-		additional_port_item=$(echo "${additional_port_item}" | xargs)
-
-		echo "[info] Adding additional incoming & outgoing port ${additional_port_item} for ${docker_interface}"
-
-		# accept input & output to additional port for lan interface
-		iptables --append INPUT --in-interface "${docker_interface}" --protocol tcp --destination-port "${additional_port_item}" --jump ACCEPT
-		iptables --append INPUT --in-interface "${docker_interface}" --protocol tcp --source-port "${additional_port_item}" --jump ACCEPT
-		iptables --append OUTPUT --out-interface "${docker_interface}" --protocol tcp --destination-port "${additional_port_item}" --jump ACCEPT
-		iptables --append OUTPUT --out-interface "${docker_interface}" --protocol tcp --source-port "${additional_port_item}" --jump ACCEPT
-	done
-fi
-
-if [ -n "${HOST_NETWORK_CIDR:-}" ] ; then
+if [[ -n "${HOST_NETWORK_CIDR:-}" ]] ; then
 	echo "[info] Adding HOST_NETWORK_CIDR ${host_net_cidr} via ${docker_network_cidr}"
 	iptables --append INPUT --in-interface "${docker_interface}" --protocol tcp --source "${host_net_cidr}" --destination "${docker_network_cidr}" --jump ACCEPT
 	iptables --append OUTPUT --out-interface "${docker_interface}" --protocol tcp --source "${docker_network_cidr}" --destination "${host_net_cidr}" --jump ACCEPT
@@ -142,4 +173,4 @@ echo "--------------------"
 #############
 ## OpenVPN ##
 #############
-# openvpn --config /vpn/vpn.conf
+# openvpn --config ${VPN_CONFIG}
