@@ -3,14 +3,14 @@ version: '2.1'
 services:
   vprox:
     build: .
-    image: rjlasko/vprox:0.1
+    image: rjlasko/openvpn-proxy:0.1
     cap_add:
       - NET_ADMIN
-    devices:
-      - "/dev/net/tun"
-    dns:
-      - "8.8.8.8"
-      - "8.8.4.4"
     volumes:
-      - "${OPENVPN_CONF}:/vpn:ro"
+      - "${OPENVPN_CONF}:/mnt/config:ro"
+    # devices:
+    #   - "/dev/net/tun"
+    # dns:
+    #   - "8.8.8.8"
+    #   - "8.8.4.4"
     
