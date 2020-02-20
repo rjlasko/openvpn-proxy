@@ -5,6 +5,6 @@ RUN apk add --update openvpn ipcalc grep
 
 COPY start.sh /usr/bin
 
-VOLUME ["/config"]
+VOLUME ["/mnt/config"]
 
 # CMD ["/bin/sh", "/usr/bin/start.sh"]
