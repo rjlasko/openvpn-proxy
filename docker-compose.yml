@@ -1,16 +1,20 @@
 version: '2.1'
 
 services:
-  vprox:
+  vproxy:
     build: .
     image: rjlasko/openvpn-proxy:0.1
     cap_add:
       - NET_ADMIN
+    environment:
+      HOST_NETWORK_CIDR: "${HOST_NETWORK_CIDR}"
+      # TODO: eventually use
+      # ADDITIONAL_PORTS: "${ADDITIONAL_PORTS}"
+      OVPN_CFG_REGEX: "${OVPN_CFG_REGEX}"
+      # TODO: eventually derive & delete these
+      NAME_SERVERS: 209.222.18.222,84.200.69.80,37.235.1.174,1.1.1.1,209.222.18.218,37.235.1.177,84.200.70.40,1.0.0.1
+      VPN_CONFIG_SRC: "${VPN_CONFIG_SRC}"
+      VPN_AUTH: "${VPN_AUTH}"
     volumes:
-      - "${OPENVPN_CONF}:/mnt/config:ro"
-    # devices:
-    #   - "/dev/net/tun"
-    # dns:
-    #   - "8.8.8.8"
-    #   - "8.8.4.4"
-    
+      - "${CONFIG_VOL}:/mnt/config:ro"
+      - "~:/mnt/home:ro"

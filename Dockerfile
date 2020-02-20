@@ -1,6 +1,6 @@
 FROM alpine
 
-RUN apk add --update openvpn ipcalc grep
+RUN apk add --update openvpn ipcalc grep dos2unix
 # iproute2 net-tools
 
 COPY start.sh /usr/bin
