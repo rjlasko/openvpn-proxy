@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -euo pipefail
-# set -xv
+# set -x
 
 # this script needs to take in all variables that will:
 # 1. setup the default user
@@ -8,6 +8,30 @@ set -euo pipefail
 # 3. run openvpn (as user?)
 
 DEBUG=${DEBUG:-"false"}
+
+#######################
+## GET+SHOW DEFAULTS ##
+#######################
+echo "--------------------"
+echo "[info] Initial ip route defined as follows..."
+echo "--------------------"
+ip route
+echo "--------------------"
+echo "[info] Initial iptables defined as follows..."
+echo "--------------------"
+iptables --list-rules
+echo "--------------------"
+echo "[info] Initial /etc/resolv.conf defined as follows..."
+echo "--------------------"
+cat /etc/resolv.conf
+echo "--------------------"
+echo "[info] Initial /etc/hosts defined as follows..."
+echo "--------------------"
+cat /etc/hosts
+echo "--------------------"
+
+# get ip for local gateway (eth0)
+default_gateway=$(ip route show default | awk '/default/ {print $3}')
 
 #######################
 ## PARSE OVPN CONFIG ##
@@ -18,7 +42,14 @@ if [ ! -f ${VPN_CONFIG_SRC} ] ; then
 	echo "[error] Failed to find OVPN config file located at VPN_CONFIG_SRC: ${VPN_CONFIG_SRC}"
 fi
 dos2unix -n ${VPN_CONFIG_SRC} ${VPN_CONFIG}
-echo "[info] OpenVPN config file (ovpn extension) is located at ${VPN_CONFIG}"
+echo "[info] OpenVPN config file is located at ${VPN_CONFIG}"
+
+VPN_AUTH="/vpn/vpn.auth"
+if [ ! -f ${VPN_AUTH_SRC} ] ; then
+	echo "[error] Failed to find OVPN credentials file located at VPN_AUTH_SRC: ${VPN_AUTH_SRC}"
+fi
+dos2unix -n ${VPN_AUTH_SRC} ${VPN_AUTH}
+echo "[info] OpenVPN credentials file is located at ${VPN_AUTH}"
 
 vpn_remote_line=$(grep -P -o -m 1 '^(\s+)?remote\s.*' $VPN_CONFIG_SRC)
 echo "[info] VPN remote line defined as '${vpn_remote_line}'"
@@ -38,6 +69,104 @@ echo "[info] VPN_DEVICE_TYPE defined as '${VPN_DEVICE_TYPE}'"
 
 NAME_SERVERS=$(echo "${NAME_SERVERS}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
 echo "[info] NAME_SERVERS defined as '${NAME_SERVERS}'"
+
+#########################
+## DEFINE NAME SERVERS ##
+#########################
+# split comma seperated string into list from NAME_SERVERS env variable
+IFS=',' read -ra name_server_list <<< "${NAME_SERVERS}"
+
+# remove existing ns, docker injects ns from host and isp ns can block/hijack
+> /etc/resolv.conf
+
+# process name servers in the list
+for name_server_item in "${name_server_list[@]}" ; do
+	# strip whitespace from start and end of name_server_item
+	name_server_item=$(echo "${name_server_item}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+
+	echo "[info] Adding ${name_server_item} to /etc/resolv.conf"
+	echo "nameserver ${name_server_item}" >> /etc/resolv.conf
+done
+
+echo "[info] Updated /etc/resolv.conf defined as follows..."
+echo "===================="
+cat /etc/resolv.conf
+echo "===================="
+
+##################################
+## RESOLVE VARS BEFORE RECONFIG ##
+##################################
+# if the vpn_remote is NOT an ip address then resolve it
+if ! echo "${VPN_REMOTE}" | grep -P -o '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'; then
+	retry_count=12
+	remote_dns_answer=$(drill -a -4 "${VPN_REMOTE}" | grep -v 'SERVER' | grep -m 63 -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | xargs)
+
+	while [ -z "${remote_dns_answer}" ]; do\
+		retry_count=$((retry_count-1))
+		if [ "${retry_count}" -eq "0" ]; then
+			echo "[crit] '${VPN_REMOTE}' cannot be resolved, possible DNS issues, exiting..." ; exit 1
+		else
+			remote_dns_answer=$(drill -a -4 "${VPN_REMOTE}" | grep -v 'SERVER' | grep -m 63 -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | xargs)
+			if [[ "${DEBUG}" == "true" ]]; then
+					echo "[debug] Failed to resolve endpoint '${VPN_REMOTE}' retrying..."
+			fi
+			sleep 5s
+		fi
+	done
+
+	# get first ip from remote_dns_answer and write to the hosts file
+	# this is required as openvpn will use the remote entry in the ovpn file
+	# even if you specify the --remote options on the command line, and thus we
+	# must also be able to resolve the host name (assuming it is a name and not ip).
+	remote_dns_answer_first=$(echo "${remote_dns_answer}" | cut -d ' ' -f 1)
+
+	# if not blank then write to hosts file
+	if [[ ! -z "${remote_dns_answer_first}" ]]; then
+		echo "${remote_dns_answer_first}	${VPN_REMOTE}" >> /etc/hosts
+	fi
+
+fi
+
+echo "[info] Updated /etc/hosts defined as follows..."
+echo "===================="
+cat /etc/hosts
+echo "===================="
+
+################################
+## MODIFICATIONS TO OVPN CONF ##
+################################
+
+
+# # remove persist-tun from ovpn file if present, this allows reconnection to tunnel on disconnect
+# sed -i '/^persist-tun/d' "${VPN_CONFIG}"
+# 
+# # remove reneg-sec from ovpn file if present, this is removed to prevent re-checks and dropouts
+# sed -i '/^reneg-sec.*/d' "${VPN_CONFIG}"
+# 
+# # remove up script from ovpn file if present, this is removed as we do not want any other up/down scripts to run
+# sed -i '/^up\s.*/d' "${VPN_CONFIG}"
+# 
+# # remove down script from ovpn file if present, this is removed as we do not want any other up/down scripts to run
+# sed -i '/^down\s.*/d' "${VPN_CONFIG}"
+# 
+# # remove ipv6 configuration from ovpn file if present (iptables not configured to support ipv6)
+# sed -i '/^route-ipv6/d' "${VPN_CONFIG}"
+# 
+# # remove ipv6 configuration from ovpn file if present (iptables not configured to support ipv6)
+# sed -i '/^ifconfig-ipv6/d' "${VPN_CONFIG}"
+# 
+# # remove ipv6 configuration from ovpn file if present (iptables not configured to support ipv6)
+# sed -i '/^tun-ipv6/d' "${VPN_CONFIG}"
+# 
+# # remove windows specific openvpn options
+# sed -i '/^route-method exe/d' "${VPN_CONFIG}"
+# sed -i '/^service\s.*/d' "${VPN_CONFIG}"
+# sed -i '/^block-outside-dns/d' "${VPN_CONFIG}"
+
+# forcibly set virtual network device to 'tun0/tap0' (referenced in iptables)
+sed -i "s/^dev\s${VPN_DEVICE_TYPE}.*/dev ${VPN_DEVICE_TYPE}/g" "${VPN_CONFIG}"
+# store credentials in separate file for authentication
+sed -i -e "s#auth-user-pass.*#auth-user-pass ${VPN_AUTH}#g" "${VPN_CONFIG}"
 
 #########################
 ## DOCKER NETWORK INFO ##
@@ -63,14 +192,6 @@ echo "[info] Docker network defined as ${docker_network_cidr}"
 ## HOST NETWORK INFO ##
 #######################
 
-# get ip for local gateway (eth0)
-default_gateway=$(ip route show default | awk '/default/ {print $3}')
-echo "[info] Default route for container is ${default_gateway}"
-
-##############
-## IP ROUTE ##
-##############
-
 if [ -n "${HOST_NETWORK_CIDR:-}" ] ; then
 	cidr_regex='(((25[0-5]|2[0-4][0-9]|1?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9][0-9]?))(\/([8-9]|[1-2][0-9]|3[0-2]))([^0-9.]|$)'
 	# trim surrounding whitespace
@@ -84,10 +205,10 @@ if [ -n "${HOST_NETWORK_CIDR:-}" ] ; then
 	fi
 fi
 
-echo "[info] ip route defined as follows..."
-echo "--------------------"
+echo "[info] Updated ip route defined as follows..."
+echo "===================="
 ip route
-echo "--------------------"
+echo "===================="
 
 ###############
 ## IP TABLES ##
@@ -162,15 +283,19 @@ iptables --append OUTPUT --out-interface lo --jump ACCEPT
 iptables --append INPUT --in-interface "${VPN_DEVICE_TYPE}" --jump ACCEPT
 iptables --append OUTPUT --out-interface "${VPN_DEVICE_TYPE}" --jump ACCEPT
 
-echo "[info] iptables defined as follows..."
-echo "--------------------"
+echo "[info] Updated iptables defined as follows..."
+echo "===================="
 iptables --list-rules 2>&1 | tee /tmp/getiptables
 chmod +r /tmp/getiptables
-echo "--------------------"
-
+echo "===================="
 
 
 #############
 ## OpenVPN ##
 #############
-# openvpn --config ${VPN_CONFIG}
+# set -xv
+# openvpn --verb 11 --config ${VPN_CONFIG}
+
+
+
+# bash /mnt/home/space/openvpn-proxy/start.sh
