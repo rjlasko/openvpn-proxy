@@ -33,25 +33,33 @@ echo "--------------------"
 # get ip for local gateway (eth0)
 default_gateway=$(ip route show default | awk '/default/ {print $3}')
 
-#######################
-## PARSE OVPN CONFIG ##
-#######################
-mkdir -p /vpn
+#####################################
+## USE GIVEN -OR- FIND OVPN CONFIG ##
+#####################################
+
+# TODO: if VPN_CONFIG_MNT is not found, extract from VPN_MNT
+# TODO: if VPN_AUTH_MNT is not found, extract from VPN_MNT
+
 VPN_CONFIG="/vpn/vpn.conf"
-if [ ! -f ${VPN_CONFIG_SRC} ] ; then
-	echo "[error] Failed to find OVPN config file located at VPN_CONFIG_SRC: ${VPN_CONFIG_SRC}"
+if [ ! -f ${VPN_CONFIG_MNT} ] ; then
+	echo "[error] Failed to find OVPN config file located at VPN_CONFIG_MNT: ${VPN_CONFIG_MNT}"
+	exit 1
 fi
-dos2unix -n ${VPN_CONFIG_SRC} ${VPN_CONFIG}
+dos2unix -n ${VPN_CONFIG_MNT} ${VPN_CONFIG}
 echo "[info] OpenVPN config file is located at ${VPN_CONFIG}"
 
 VPN_AUTH="/vpn/vpn.auth"
-if [ ! -f ${VPN_AUTH_SRC} ] ; then
-	echo "[error] Failed to find OVPN credentials file located at VPN_AUTH_SRC: ${VPN_AUTH_SRC}"
+if [ ! -f ${VPN_AUTH_MNT} ] ; then
+	echo "[error] Failed to find OVPN credentials file located at VPN_AUTH_MNT: ${VPN_AUTH_MNT}"
+	exit 1
 fi
-dos2unix -n ${VPN_AUTH_SRC} ${VPN_AUTH}
+dos2unix -n ${VPN_AUTH_MNT} ${VPN_AUTH}
 echo "[info] OpenVPN credentials file is located at ${VPN_AUTH}"
 
-vpn_remote_line=$(grep -P -o -m 1 '^(\s+)?remote\s.*' $VPN_CONFIG_SRC)
+#######################
+## PARSE OVPN CONFIG ##
+#######################
+vpn_remote_line=$(grep -P -o -m 1 '^(\s+)?remote\s.*' $VPN_CONFIG_MNT)
 echo "[info] VPN remote line defined as '${vpn_remote_line}'"
 
 VPN_REMOTE=$(echo "${vpn_remote_line}" | grep -P -o -m 1 '(?<=remote\s)[^\s]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
@@ -293,8 +301,7 @@ echo "===================="
 #############
 ## OpenVPN ##
 #############
-# set -xv
-# openvpn --verb 11 --config ${VPN_CONFIG}
+openvpn --verb 11 --config ${VPN_CONFIG}
 
 
 
