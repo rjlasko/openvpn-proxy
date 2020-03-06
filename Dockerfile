@@ -2,8 +2,8 @@ FROM alpine
 
 RUN mkdir /vpn
 
-ENV VPN_CONFIG_MNT ''
-ENV VPN_AUTH_MNT ''
+ENV VPN_CONFIG_MNT '/mnt/vpn/conf.ovpn'
+ENV VPN_AUTH_MNT '/mnt/vpn/vpn.auth'
 ENV HOST_NETWORK_CIDR ''
 ENV NAME_SERVERS ''
 
