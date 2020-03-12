@@ -301,7 +301,7 @@ echo "===================="
 #############
 ## OpenVPN ##
 #############
-openvpn --verb 11 --config ${VPN_CONFIG}
+exec openvpn --verb 11 --config ${VPN_CONFIG}
 
 
 
