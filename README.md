@@ -32,7 +32,7 @@ services:
     environment:
       # XXX: port mappings for applications using this container's network stack are additionally declared here
       ADDITIONAL_PORTS: "8080,9090"
-      HOST_NETWORK_CIDR: "192.168.14.0/24"
+      HOST_NETWORK_CIDR: "192.168.1.0/24"
       NAME_SERVERS: "209.222.18.222,84.200.69.80,37.235.1.174,1.1.1.1,209.222.18.218,37.235.1.177,84.200.70.40,1.0.0.1"
     volumes:
       - "<path to ovpn config file>:/mnt/vpn/conf.ovpn:ro"
