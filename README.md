@@ -51,9 +51,11 @@ services:
 
 ## Links
 Most of the credit for this goes to BinHex, as this container is very much a reduction of the work found in the following repositories:
+
 [binhex/arch-sabnzbdvpn](https://github.com/binhex/arch-sabnzbdvpn)
 
 [binhex/arch-int-openvpn](https://github.com/binhex/arch-int-openvpn)
 
 Credit also goes to David Personette, as some interesting bits were taken from his OpenVPN container:
+
 [dperson/openvpn-client](https://github.com/dperson/openvpn-client)
